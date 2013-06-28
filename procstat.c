@@ -10,10 +10,16 @@
 
 #define TRACED_PROC_NR	5
 
-struct 
-
+static struct per_proc_stat *prev_proc_records;
+static struct per_proc_stat *curr_proc_records;
 
 extern struct record my_record;
+
+static void pick_topN_proc(void) {
+	// TODO, ON GOING
+	prev_proc_records = NULL;
+	curr_proc_records = NULL;
+}
 
 static void swap_proc_stat(struct per_proc_stat *pa, struct per_proc_stat *pb) {
 	int pid = pa->pid;
@@ -30,6 +36,9 @@ void analyse_proc(struct procstat *stats) {
 	struct per_cpu_procstat *per_cpu_stat = NULL;
 	struct per_proc_stat *proc_stat = NULL;
 	int i, j;
+
+	pick_topN_proc();
+
 	for (i = 0; i < LOG_MAX_CPU_NR; i++) {
 		per_cpu_stat = &stats->stats[i];
 		printk("cpu: %d\n", i);

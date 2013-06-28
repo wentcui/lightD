@@ -4,6 +4,8 @@
 #define LOG_MAX_CPU_NR 4
 #define MAX_TRACED_PROCESS 10
 
+#include <linux/cpuset.h>
+
 struct cpufreqs {
 	unsigned int cpufreqs[LOG_MAX_CPU_NR];
 	bool modified;
@@ -15,6 +17,8 @@ struct cpufreqs {
 struct per_proc_stat {
 	int pid;
 	long counter;
+
+	cputime_t cutime, cstime, utime, stime;
 };
 
 struct per_cpu_procstat {
