@@ -5,20 +5,51 @@
 #include <linux/sched.h>  // for task_struct
 #include <linux/slab.h>
 #include <linux/smp.h>
+#include <linux/string.h>
 
 #include "logger.h"
 
 #define TRACED_PROC_NR	5
-
-static struct per_proc_stat *prev_proc_records;
-static struct per_proc_stat *curr_proc_records;
+static struct per_proc_stat *topN_proc_records_prev;
+static struct per_proc_stat *topN_proc_records_curr;
 
 extern struct record my_record;
 
-static void pick_topN_proc(void) {
-	// TODO, ON GOING
-	prev_proc_records = NULL;
-	curr_proc_records = NULL;
+static 
+
+static void pick_topN_proc(struct procstat* copystats) {
+	int count = 0;
+	int indexarr[LOG_MAX_CPU_NR];
+	struct per_cpu_procstat *per_cpu_stat = NULL;
+	struct per_proc_stat *proc_stat = NULL;
+	
+	int localmax, localmaxindex, localindex; // localmaxindex: current max of indexarr[]
+	int localmaxindex = 0;
+	
+	memset(indexarr, 0, sizeof(int) * LOG_MAX_CPU_NR);
+
+	if (!topN_proc_records_prev)
+		return;
+
+	for (count = 0; count < TRACED_PROC_NR; count++) {
+		per_cpu_stat = &copystats->stats[i];
+		localmax = 0;
+		localmaxindex = -1;
+		for (int i = 0; i < LOG_MAX_CPU_NR; i++) {
+			localindex = indexarr[i];
+			proc_stat = &per_cpu_stat->per_cpu_stats[localindex];
+			if (!proc_stat->pid)
+				continue;
+
+			if (proc_stat->counter > localmax) {
+				localmax = proc_stat->counter;
+				localmaxindex = i;
+			}
+		}
+
+		if (localmaxindex < 0)
+			break;
+	}
 }
 
 static void swap_proc_stat(struct per_proc_stat *pa, struct per_proc_stat *pb) {
@@ -35,9 +66,11 @@ static void swap_proc_stat(struct per_proc_stat *pa, struct per_proc_stat *pb) {
 void analyse_proc(struct procstat *stats) {
 	struct per_cpu_procstat *per_cpu_stat = NULL;
 	struct per_proc_stat *proc_stat = NULL;
+	struct procstat copystats;
 	int i, j;
 
-	pick_topN_proc();
+	memcpy(&copystats, stats, sizeof(struct procstat));
+	pick_topN_proc(&copystats);
 
 	for (i = 0; i < LOG_MAX_CPU_NR; i++) {
 		per_cpu_stat = &stats->stats[i];
