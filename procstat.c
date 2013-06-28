@@ -6,37 +6,62 @@
 #include <linux/slab.h>
 #include <linux/smp.h>
 #include <linux/string.h>
+#include <linux/err.h>
 
 #include "logger.h"
 
-#define TRACED_PROC_NR	5
+#define TRACED_PROC_NR	8
 static struct per_proc_stat *topN_proc_records_prev;
 static struct per_proc_stat *topN_proc_records_curr;
 
 extern struct record my_record;
 
-static 
+static struct per_proc_stat* find_record(struct per_proc_stat *records, struct per_proc_stat *r) {
+	int i, pid;
+	for (i = 0; i < MAX_TRACED_PROCESS; i++) {
+		pid = records[i].pid;
+		if (!pid)
+			break;
 
-static void pick_topN_proc(struct procstat* copystats) {
-	int count = 0;
+		if (pid == r->pid)
+			return &records[i];
+	}
+	return NULL;
+}
+
+static void push_procstat(struct per_proc_stat *prev, struct per_proc_stat *curr) {
+	//TODO
+	printk("pid: %d ", curr->pid);
+}
+
+static int pick_topN_proc(struct procstat* copystats) {
+	int count, err, i;
 	int indexarr[LOG_MAX_CPU_NR];
 	struct per_cpu_procstat *per_cpu_stat = NULL;
-	struct per_proc_stat *proc_stat = NULL;
-	
-	int localmax, localmaxindex, localindex; // localmaxindex: current max of indexarr[]
-	int localmaxindex = 0;
+	struct per_proc_stat *proc_stat, *prev_proc_stat;
+
+	// localmaxindex: current max of indexarr[]	
+	int localmax, localmaxindex, localindex; 
 	
 	memset(indexarr, 0, sizeof(int) * LOG_MAX_CPU_NR);
 
-	if (!topN_proc_records_prev)
-		return;
+	if (IS_ERR(topN_proc_records_prev)) {
+		err = PTR_ERR(topN_proc_records_prev);
+		return err;
+	}
+
+	topN_proc_records_curr = kmalloc(sizeof(struct per_proc_stat) * TRACED_PROC_NR, GFP_KERNEL);
+	if (IS_ERR(topN_proc_records_curr)) {
+		err = PTR_ERR(topN_proc_records_curr);
+		return err;
+	}
 
 	for (count = 0; count < TRACED_PROC_NR; count++) {
-		per_cpu_stat = &copystats->stats[i];
 		localmax = 0;
 		localmaxindex = -1;
-		for (int i = 0; i < LOG_MAX_CPU_NR; i++) {
+		for (i = 0; i < LOG_MAX_CPU_NR; i++) {
 			localindex = indexarr[i];
+			per_cpu_stat = &copystats->stats[i];
 			proc_stat = &per_cpu_stat->per_cpu_stats[localindex];
 			if (!proc_stat->pid)
 				continue;
@@ -49,7 +74,26 @@ static void pick_topN_proc(struct procstat* copystats) {
 
 		if (localmaxindex < 0)
 			break;
+
+		per_cpu_stat = &copystats->stats[localmaxindex];
+		proc_stat = &per_cpu_stat->per_cpu_stats[indexarr[localmaxindex]];
+
+		/* Find a record in topN_proc_records_prev
+		 */
+		prev_proc_stat = find_record(topN_proc_records_prev, proc_stat);
+		indexarr[localmaxindex]++;
+
+		if (prev_proc_stat) {
+			push_procstat(prev_proc_stat, proc_stat);
+		}
+		memcpy(&topN_proc_records_curr[count], proc_stat, sizeof(struct per_proc_stat));
 	}
+	printk("\n");
+	kfree(topN_proc_records_prev);
+	topN_proc_records_prev = topN_proc_records_curr;
+	topN_proc_records_curr = NULL;
+
+	return 0;
 }
 
 static void swap_proc_stat(struct per_proc_stat *pa, struct per_proc_stat *pb) {
@@ -69,9 +113,9 @@ void analyse_proc(struct procstat *stats) {
 	struct procstat copystats;
 	int i, j;
 
+	// avoid data race, copy first
 	memcpy(&copystats, stats, sizeof(struct procstat));
 	pick_topN_proc(&copystats);
-
 	for (i = 0; i < LOG_MAX_CPU_NR; i++) {
 		per_cpu_stat = &stats->stats[i];
 		printk("cpu: %d\n", i);
@@ -117,6 +161,16 @@ void incr_proc_counter(int *arr) {
 	}
 }
 
+static int procstat_init(void) {
+	int err = 0;
+	topN_proc_records_prev = kmalloc(sizeof(struct per_proc_stat) * TRACED_PROC_NR, GFP_KERNEL);
+	if (IS_ERR(topN_proc_records_prev)) {
+		err = PTR_ERR(topN_proc_records_prev);
+		printk("kmalloc topN_proc_records_prev failed");
+		return err;
+	}
+	return err;
+}
 
 static int sched_notifier_call(struct notifier_block *my_notifier, 
 		unsigned long change_type, void *data)
@@ -133,6 +187,9 @@ struct notifier_block sched_notifier = {
 
 int add_scheduler_notifier(void)
 {
+	if (procstat_init())
+		return -1;
+
 	return scheduler_register_notifier(&sched_notifier);
 }
 

@@ -17,7 +17,7 @@
 #include "cpufreq.h"
 #include "procstat.h"
 
-#define SLEEP_TIME 5
+#define SLEEP_TIME 0.5
 
 static unsigned long jiffies_before, jiffies_next;
 static struct task_struct *analyse_proc_thread;
