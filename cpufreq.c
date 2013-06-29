@@ -4,7 +4,7 @@
 
 #include "logger.h"
 
-extern struct record my_record;
+extern struct record *my_record;
 
 static int cpufreq_notifier_call(struct notifier_block *my_notifier, 
 								unsigned long change_type, void *data)
@@ -14,8 +14,8 @@ static int cpufreq_notifier_call(struct notifier_block *my_notifier,
 		return -1;
 
 //	printk("cpuid: %d, cpu_freq: %d\n", freq->cpu, freq->old);
-	my_record.freqs.cpufreqs[freq->cpu] = freq->old;
-	my_record.freqs.modified = true;
+	my_record->freqs.cpufreqs[freq->cpu] = freq->old;
+	my_record->freqs.modified = true;
 	return 0;
 }
 

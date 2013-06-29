@@ -11,10 +11,22 @@
 #include "logger.h"
 
 #define TRACED_PROC_NR	8
+
 static struct per_proc_stat *topN_proc_records_prev;
 static struct per_proc_stat *topN_proc_records_curr;
 
-extern struct record my_record;
+extern struct record *my_record;
+
+static void collect_cpu_time(struct cpu_times *cput) {
+	//TODO
+}
+
+static void collect_proc_time(struct cpu_time *cpup) {
+	cput->user += kcpustat_cpu(i).cpustat[CPUTIME_USER];
+	cput->nice += kcpustat_cpu(i).cpustat[CPUTIME_NICE];
+	cput->system += kcpustat_cpu(i).cpustat[CPUTIME_SYSTEM];
+	cput->idle += get_idle_time(i);
+}
 
 static struct per_proc_stat* find_record(struct per_proc_stat *records, struct per_proc_stat *r) {
 	int i, pid;
@@ -29,20 +41,22 @@ static struct per_proc_stat* find_record(struct per_proc_stat *records, struct p
 	return NULL;
 }
 
-static void push_procstat(struct per_proc_stat *prev, struct per_proc_stat *curr) {
+static void push_procstat(struct per_proc_stat *prev, struct per_proc_stat *curr, struct cpu_times *cput) {
 	//TODO
 	printk("pid: %d ", curr->pid);
 }
 
+
 static int pick_topN_proc(struct procstat* copystats) {
 	int count, err, i;
 	int indexarr[LOG_MAX_CPU_NR];
-	struct per_cpu_procstat *per_cpu_stat = NULL;
+	struct per_cpu_procstat *per_cpu_stat;
 	struct per_proc_stat *proc_stat, *prev_proc_stat;
+	struct cpu_times *cput;
 
 	// localmaxindex: current max of indexarr[]	
 	int localmax, localmaxindex, localindex; 
-	
+
 	memset(indexarr, 0, sizeof(int) * LOG_MAX_CPU_NR);
 
 	if (IS_ERR(topN_proc_records_prev)) {
@@ -50,6 +64,17 @@ static int pick_topN_proc(struct procstat* copystats) {
 		return err;
 	}
 
+	cput = kmalloc(sizeof(struct cpu_times), GFP_KERNEL);
+	if (IS_ERR(cput)) {
+		err = PTR_ERR(cput);
+		return err;
+	}
+	memset(cput, 0, sizeof(struct cpu_times));
+
+	/* Collect all cpu times */
+	collect_cpu_time(cput);
+
+	/* current process status array */
 	topN_proc_records_curr = kmalloc(sizeof(struct per_proc_stat) * TRACED_PROC_NR, GFP_KERNEL);
 	if (IS_ERR(topN_proc_records_curr)) {
 		err = PTR_ERR(topN_proc_records_curr);
@@ -90,6 +115,8 @@ static int pick_topN_proc(struct procstat* copystats) {
 	}
 	printk("\n");
 	kfree(topN_proc_records_prev);
+	kfree(cput);
+
 	topN_proc_records_prev = topN_proc_records_curr;
 	topN_proc_records_curr = NULL;
 
@@ -99,23 +126,29 @@ static int pick_topN_proc(struct procstat* copystats) {
 static void swap_proc_stat(struct per_proc_stat *pa, struct per_proc_stat *pb) {
 	int pid = pa->pid;
 	int counter = pa->counter;
+	struct task_struct *tsk = pa->tsk;
 
 	pa->pid = pb->pid;
 	pa->counter = pb->counter;
+	pa->tsk = pb->tsk;
 
 	pb->pid = pid;
 	pb->counter = counter; 
+	pa->tsk = tsk;
 }
 
 void analyse_proc(struct procstat *stats) {
 	struct per_cpu_procstat *per_cpu_stat = NULL;
 	struct per_proc_stat *proc_stat = NULL;
-	struct procstat copystats;
+	struct procstat *copystats;
 	int i, j;
 
+	copystats = kmalloc(sizeof(struct procstat), GFP_KERNEL);
+
 	// avoid data race, copy first
-	memcpy(&copystats, stats, sizeof(struct procstat));
-	pick_topN_proc(&copystats);
+	memcpy(copystats, stats, sizeof(struct procstat));
+	memset(stats, 0, sizeof(struct procstat));
+	pick_topN_proc(copystats);
 	for (i = 0; i < LOG_MAX_CPU_NR; i++) {
 		per_cpu_stat = &stats->stats[i];
 		printk("cpu: %d\n", i);
@@ -126,22 +159,25 @@ void analyse_proc(struct procstat *stats) {
 		printk("\n");
 	}
 	printk("\n\n");
-	memset(stats, 0, sizeof(struct procstat));
+	kfree(copystats);
 }
 
 /* Increase the process counter in corresponding cpu
  */
-void incr_proc_counter(int *arr) {
-	struct procstat *stats = &my_record.procstat;
-	struct per_cpu_procstat *per_cpu_stat = NULL;
-	struct per_proc_stat *proc_stat = NULL;
-	int i, j;
-	int pid = 0;
+void incr_proc_counter(struct proc_record *arr) {
+	struct procstat *stats = &my_record->procstat;
+	struct per_cpu_procstat *per_cpu_stat;
+	struct per_proc_stat *proc_stat;
+	struct proc_record *proc_r;
+	struct task_struct *tsk;
+	int i, j, pid;
 	for (i = 0; i < LOG_MAX_CPU_NR; i++) {
-		pid = arr[i];
-		if (pid <= 0)
+		proc_r = arr[i];
+		if (!proc_r || proc_r->pid <= 0)
 			continue;
 		per_cpu_stat = &stats->stats[i];
+		pid = proc_r->pid;
+		tsk = proc_r->tsk;
 
 		for (j = 0; j < MAX_TRACED_PROCESS; j++) {
 			proc_stat = &per_cpu_stat->per_cpu_stats[j];
@@ -155,6 +191,7 @@ void incr_proc_counter(int *arr) {
 			} else if (j == MAX_TRACED_PROCESS - 1 || proc_stat->pid <= 0) {
 				proc_stat->pid = pid;
 				proc_stat->counter = 1;
+				proc_stat->tsk = tsk;
 				break;
 			}
 		}

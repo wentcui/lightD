@@ -17,17 +17,17 @@
 #include "cpufreq.h"
 #include "procstat.h"
 
-#define SLEEP_TIME 0.5
+#define SLEEP_TIME 5
 
 static unsigned long jiffies_before, jiffies_next;
 static struct task_struct *analyse_proc_thread;
 
-struct record my_record;
+struct record *my_record;
 
 /* Thread to analyse the record we get every SLEEP_TIME(s)
  */
 int analyse_record(void *data) {
-	struct procstat *stats = &my_record.procstat;
+	struct procstat *stats = &my_record->procstat;
 	int delay = SLEEP_TIME * HZ;
 
 	while (1) {
@@ -68,15 +68,26 @@ void thread_exit(void) {
 
 int init_logger(void)
 {
-	memset(&my_record, 0, sizeof(struct record));
-	return 0;
+	int err = 0;
+	my_record = kmalloc(sizeof(struct record), GFP_KERNEL);
+	if (IS_ERR(my_record)) {
+		err = PTR_ERR(my_record);
+		return err;
+	}
+	
+	memset(my_record, 0, sizeof(struct record));
+	return err;
 }
 
 int __init lkp_init(void)
 {
 	int r = 0;
 	r = init_logger();
+	if (r)
+		printk("init logger failed\n");
+
 	thread_init();
+
 	r = add_cpufreq_notifier();
 	if (r)
 		printk("add cpu notifier failed");
@@ -93,6 +104,7 @@ void __exit lkp_cleanup(void)
 	thread_exit();
 	del_scheduler_notifier();
 	del_cpufreq_notifier();
+	kfree(my_record);
 }
 
 module_init(lkp_init);
