@@ -14,6 +14,13 @@ struct cpu_times {
 	u64 idle;
 };
 
+struct proc_times {
+	u64 utime;
+	u64 stime;
+	u64 cstime;
+	u64 cutime;
+};
+
 struct cpufreqs {
 	unsigned int cpufreqs[LOG_MAX_CPU_NR];
 	bool modified;
@@ -27,7 +34,8 @@ struct per_proc_stat {
 	long counter;
 	struct task_struct* tsk;
 
-	cputime_t cutime, cstime, utime, stime;
+	/* proc run time */
+	struct proc_times proc_time;
 };
 
 struct per_cpu_procstat {
@@ -35,8 +43,8 @@ struct per_cpu_procstat {
 };
 
 struct procstat {
-	/* Total CPU time, sum for all cpus*/
-	struct cpu_times cpu_time;
+	/* Total CPU time, sum for all cpus */
+	struct cpu_times cput;
 
 	/* process array for each CPU */
 	struct per_cpu_procstat stats[LOG_MAX_CPU_NR];
