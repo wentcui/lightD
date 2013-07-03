@@ -19,9 +19,7 @@
 
 #define SLEEP_TIME 3
 
-static unsigned long jiffies_before, jiffies_next;
 static struct task_struct *analyse_proc_thread;
-
 struct record *my_record;
 
 /* Thread to analyse the record we get every SLEEP_TIME(s)
@@ -31,9 +29,6 @@ int analyse_record(void *data) {
 	int delay = SLEEP_TIME * HZ;
 
 	while (1) {
-		jiffies_before = jiffies; 
-		jiffies_next = jiffies_before + delay; 
-
 		/* Analyse the collected processes */
 		analyse_proc(stats);
 

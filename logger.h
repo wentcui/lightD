@@ -8,17 +8,17 @@
 
 struct cpu_times {
 	/* ALL CPU time */
-	u64 user;
-	u64 nice;
-	u64 system;
-	u64 idle;
+	long long int user;
+	long long int nice;
+	long long int system;
+	long long int idle;
 };
 
 struct proc_times {
-	u64 utime;
-	u64 stime;
-	u64 cstime;
-	u64 cutime;
+	long long int utime;
+	long long int stime;
+	long long int cstime;
+	long long int cutime;
 };
 
 struct cpufreqs {
