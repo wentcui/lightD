@@ -17,7 +17,7 @@
 #include "cpufreq.h"
 #include "procstat.h"
 
-#define SLEEP_TIME 5
+#define SLEEP_TIME 3
 
 static unsigned long jiffies_before, jiffies_next;
 static struct task_struct *analyse_proc_thread;
@@ -42,7 +42,7 @@ int analyse_record(void *data) {
 		if (kthread_should_stop())
 			break;
 
-		schedule_timeout(SLEEP_TIME * HZ);
+		schedule_timeout(delay);
 	}
 	return 0;
 }

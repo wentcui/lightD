@@ -49,12 +49,12 @@ unsigned long nsecs_to_jiffies(u64 n)
 	return (unsigned long)nsecs_to_jiffies64(n);
 }
 
-static inline long sum_cpu_time(struct cpu_times* ct) {
-	return cputime64_to_clock_t(ct->user + ct->nice + ct->system + ct->idle);
+static long sum_cpu_time(struct cpu_times* ct) {
+	return ct->user + ct->nice + ct->system + ct->idle;
 }
 
-static inline long sum_proc_time(struct proc_times* pt) {
-	return cputime64_to_clock_t(pt->utime + pt->stime/* + pt->cstime + pt->cutime*/);
+static long sum_proc_time(struct proc_times* pt) {
+	return pt->utime + pt->stime + pt->cstime + pt->cutime;
 }
 
 static inline void update_cpu_time(struct cpu_times *prev, struct cpu_times *curr) {
@@ -93,18 +93,46 @@ void task_times1(struct task_struct *p, cputime_t *ut, cputime_t *st)
 }
 
 
-long get_idle_time(int cpu)
+#ifdef arch_idle_time
+
+static long get_idle_time(int cpu)
 {
-	long idle, idle_time = get_cpu_idle_time_us(cpu, NULL);
+	long idle;
+
+	idle = kcpustat_cpu(cpu).cpustat[CPUTIME_IDLE];
+	if (cpu_online(cpu) && !nr_iowait_cpu(cpu))
+		idle += arch_idle_time(cpu);
+//	printk("cpu idle, arch_idle_time: %d, t: %ld\n", cpu, idle);
+	return idle;
+}
+
+static long get_iowait_time(int cpu)
+{
+	cputime64_t iowait;
+
+	iowait = kcpustat_cpu(cpu).cpustat[CPUTIME_IOWAIT];
+	if (cpu_online(cpu) && nr_iowait_cpu(cpu))
+		iowait += arch_idle_time(cpu);
+	return iowait;
+}
+
+#else
+
+static long get_idle_time(int cpu)
+{
+	u64 idle, idle_time = get_cpu_idle_time_us(cpu, NULL);
 
 	if (idle_time == -1ULL)
 		/* !NO_HZ so we can rely on cpustat.idle */
 		idle = kcpustat_cpu(cpu).cpustat[CPUTIME_IDLE];
-	else
+	else 
 		idle = usecs_to_cputime64(idle_time);
 
 	return idle;
 }
+
+
+#endif
 
 static void collect_cpu_time(struct cpu_times *cput) {
 	long user, nice, system, idle;
@@ -118,44 +146,34 @@ static void collect_cpu_time(struct cpu_times *cput) {
 	}
 }
 
-static int collect_proc_time(struct per_proc_stat *curr) {
+static void collect_proc_time(struct per_proc_stat *curr) {
 	//unsigned long flags;
 	struct proc_times *proct = &curr->proc_time;
 	struct task_struct *task = curr->tsk;
 	struct signal_struct *sig = task->signal;
 
-	cputime_t cutime, cstime, utime, stime;
+	cputime_t utime, stime;
 
-//	if (lock_task_sighand(task, &flags)) {
-	//	struct signal_struct *sig = task->signal;
-		task_times1(task, &utime, &stime);
-		cutime = sig->cutime;
-		cstime = sig->cstime;
-	
-		proct->utime = utime;
-		proct->stime = stime;
-		proct->cstime = cstime;
-		proct->cutime = cutime;
+	task_times1(task, &utime, &stime);
+	proct->cutime = sig->cutime;
+	proct->cstime = sig->cstime;
 
-//		unlock_task_sighand(task, &flags);
-		return 0;
-//	}
-
-//	return -1;
+	proct->utime = utime;
+	proct->stime = stime;
 }
 
 /* output the proc status to console */
 static void push_procstat(struct per_proc_stat *prev, 
-							struct per_proc_stat *curr, 
-							struct cpu_times *prev_cput,
-							struct cpu_times *curr_cput) {
+		struct per_proc_stat *curr, 
+		struct cpu_times *prev_cput,
+		struct cpu_times *curr_cput) {
 	long prev_proc_time, curr_proc_time;
 	long prev_cpu_time, curr_cpu_time;
 	long proc_time, cpu_time;
-//	double rate;
+	//	double rate;
 	//long t1 = 1.0, t2 = 2.0;
 	struct task_struct *tsk = prev->tsk;
-	
+
 	if ((tsk->pid) != (curr->tsk->pid)) {
 		printk("tsk pid: %d, prev pid: %d, curr pid: %d, ERR, task_struct\n", tsk->pid, prev->pid, curr->pid);
 		return;
@@ -166,17 +184,17 @@ static void push_procstat(struct per_proc_stat *prev,
 	prev_cpu_time = sum_cpu_time(prev_cput);
 	curr_cpu_time = sum_cpu_time(curr_cput);
 
-	proc_time = 100 * (curr_proc_time - prev_proc_time);
+	proc_time = 10000 * (curr_proc_time - prev_proc_time);
 	cpu_time = curr_cpu_time - prev_cpu_time;
 
 	do_div(proc_time, cpu_time);
-	
-	printk("pid: %d, cpu usage: %ld, proc time: %ld, cpu time: %ld\n", curr->pid, proc_time, proc_time, cpu_time);
+
+	printk("pid: %d, cpu usage: %ld\n", curr->pid, proc_time);
 }
 
 
 static struct per_proc_stat* find_record(struct per_proc_stat *records, 
-												struct per_proc_stat *r) {
+		struct per_proc_stat *r) {
 	int i, pid;
 	for (i = 0; i < MAX_TRACED_PROCESS; i++) {
 		pid = records[i].pid;
@@ -191,12 +209,12 @@ static struct per_proc_stat* find_record(struct per_proc_stat *records,
 
 
 static int pick_topN_proc(struct procstat* copystats,
-							struct cpu_times* cput) {
+		struct cpu_times* cput) {
 	int count, err, i;
 	int indexarr[LOG_MAX_CPU_NR];
 	struct per_cpu_procstat *per_cpu_stat;
 	struct per_proc_stat *proc_stat, *prev_proc_stat;
-	
+
 
 	// localmaxindex: current max of indexarr[]	
 	int localmax, localmaxindex, localindex; 
@@ -286,7 +304,7 @@ void analyse_proc(struct procstat *stats) {
 		printk("kmalloc procstat failed");
 		return;
 	}
-	
+
 	/* Current cpu time.
 	 * Previous cpu time stored in procstat->cputime
 	 */
@@ -316,17 +334,17 @@ void analyse_proc(struct procstat *stats) {
 
 	/* We've already copied cpu time to previous cpu time */
 	kfree(cput);
-/*
-	for (i = 0; i < LOG_MAX_CPU_NR; i++) {
-		per_cpu_stat = &copystats->stats[i];
-		printk("cpu: %d\n", i);
-		for (j = 0; j < MAX_TRACED_PROCESS; j++) {
-			proc_stat = &per_cpu_stat->per_cpu_stats[j];
-			printk("pid: %d, counter: %ld; ", proc_stat->pid, proc_stat->counter);
-		}
-		printk("\n");
-	}
-	printk("\n\n");*/
+	/*
+	   for (i = 0; i < LOG_MAX_CPU_NR; i++) {
+	   per_cpu_stat = &copystats->stats[i];
+	   printk("cpu: %d\n", i);
+	   for (j = 0; j < MAX_TRACED_PROCESS; j++) {
+	   proc_stat = &per_cpu_stat->per_cpu_stats[j];
+	   printk("pid: %d, counter: %ld; ", proc_stat->pid, proc_stat->counter);
+	   }
+	   printk("\n");
+	   }
+	   printk("\n\n");*/
 	kfree(copystats);
 }
 
@@ -376,7 +394,7 @@ void incr_proc_counter(struct  proc_record* pr) {
 	int pid = pr->pid;
 	int cpu = smp_processor_id();
 	int i;
-	
+
 	if (pid <= 0)
 		return;
 
