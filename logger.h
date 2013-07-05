@@ -2,7 +2,7 @@
 #define _LOGGER_H
 
 #define LOG_MAX_CPU_NR 4
-#define MAX_TRACED_PROCESS 20
+#define MAX_TRACED_PROCESS 128
 
 #include <linux/cpuset.h>
 

@@ -76,7 +76,7 @@ static inline void update_cpu_time(struct cpu_times *prev, struct cpu_times *cur
 	idle_d *= 10000;
 	do_div(idle_d, time_d);
 
-	printk("user: %lld, nice: %lld, system: %lld, idle: %lld, total: %lld\n\n", user_d, nice_d, system_d, idle_d, time_d);
+	printk("user: %lld, nice: %lld, system: %lld, idle: %lld\n\n", user_d, nice_d, system_d, idle_d);
 	
 	prev->user = curr->user;
 	prev->nice = curr->nice;
@@ -217,7 +217,7 @@ static void push_procstat(struct per_proc_stat *prev,
 	system *= 10000;
 	do_div(system, cpu_time);
 
-	//printk("pid: %d, cpu usage: %lld, user: %lld, system: %lld\n", curr->pid, proc_time, user, system);
+	printk("pid: %d, cpu usage: %lld, user: %lld, system: %lld\n", curr->pid, proc_time, user, system);
 }
 
 
@@ -297,7 +297,6 @@ static int pick_topN_proc(struct procstat* copystats,
 		}
 		memcpy(&topN_proc_records_curr[count], proc_stat, sizeof(struct per_proc_stat));
 	}
-	printk("\n");
 	kfree(topN_proc_records_prev);
 
 	topN_proc_records_prev = topN_proc_records_curr;
@@ -321,12 +320,8 @@ static void swap_proc_stat(struct per_proc_stat *pa, struct per_proc_stat *pb) {
 }
 
 void analyse_proc(struct procstat *stats) {
-	//struct per_cpu_procstat *per_cpu_stat = NULL;
-	//struct per_proc_stat *proc_stat = NULL;
 	struct procstat *copystats;
 	struct cpu_times *cput;
-	struct cpu_times *prev;
-	//int i, j;
 
 	copystats = kmalloc(sizeof(struct procstat), GFP_KERNEL);
 	if (IS_ERR(copystats)) {
@@ -360,7 +355,6 @@ void analyse_proc(struct procstat *stats) {
 
 	/* Copy the current cpu time to previous cpu time */
 	update_cpu_time(&stats->cput, cput);
-	prev = &stats->cput;
 
 	/* We've already copied cpu time to previous cpu time */
 	kfree(cput);
@@ -421,11 +415,12 @@ void incr_proc_counter(struct  proc_record* pr) {
 	for (i = 0; i < MAX_TRACED_PROCESS; i++) {
 		proc_stat = &per_cpu_stat->per_cpu_stats[i];
 		if (proc_stat->pid == pid) {
-			proc_stat->counter++;
 			if (tsk->pid != proc_stat->tsk->pid) {
+				proc_stat->pid = -1;
 				printk("FAILED, pid: %d\n", pid);
 				return;
 			}
+			proc_stat->counter++;
 			if (i > 0 && proc_stat->counter >= per_cpu_stat->per_cpu_stats[i - 1].counter) {
 				swap_proc_stat(proc_stat, &per_cpu_stat->per_cpu_stats[i - 1]);
 			}
