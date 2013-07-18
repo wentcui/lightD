@@ -1,5 +1,5 @@
 obj-m := loggermodule.o
-KDIR=/home/wentianc/develop/1262-thor/out/target/product/thor/obj/KERNEL_OBJ/
+KDIR=/home/wentianc/develop/zthor/out/target/product/thor/obj/KERNEL_OBJ/
 PWD := $(shell pwd)
 
 loggermodule-objs := cpufreq.o logger.o procstat.o

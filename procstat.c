@@ -217,7 +217,7 @@ static void push_procstat(struct per_proc_stat *prev,
 	system *= 10000;
 	do_div(system, cpu_time);
 
-	printk("pid: %d, cpu usage: %lld, user: %lld, system: %lld\n", curr->pid, proc_time, user, system);
+	printk("%d, %lld, %lld, %lld, %s, %s\n", curr->pid, proc_time, user, system, tsk->comm, tsk->group_leader->comm);
 }
 
 
