@@ -14,7 +14,7 @@
 #include <linux/tick.h>
 #include "logger.h"
 
-#define TRACED_PROC_NR	8
+#define TRACED_PROC_NR	32
 
 #ifndef nsecs_to_cputime
 # define nsecs_to_cputime(__nsecs)	nsecs_to_jiffies(__nsecs)
@@ -67,14 +67,14 @@ static inline void update_cpu_time(struct cpu_times *prev, struct cpu_times *cur
 	idle_d = curr->idle - prev->idle;
 
 	time_d = sum_cpu_time(curr) - sum_cpu_time(prev);
-	user_d *= 10000;
-	do_div(user_d, time_d);
-	nice_d *= 10000;
-	do_div(nice_d, time_d);
-	system_d *= 10000;
-	do_div(system_d, time_d);
-	idle_d *= 10000;
-	do_div(idle_d, time_d);
+	//user_d *= 10000;
+	//do_div(user_d, time_d);
+	//nice_d *= 10000;
+	//do_div(nice_d, time_d);
+	//system_d *= 10000;
+	//do_div(system_d, time_d);
+	//idle_d *= 10000;
+	//do_div(idle_d, time_d);
 
 	printk("user: %lld, nice: %lld, system: %lld, idle: %lld\n\n", user_d, nice_d, system_d, idle_d);
 	
@@ -211,11 +211,11 @@ static void push_procstat(struct per_proc_stat *prev,
 
 	do_div(proc_time, cpu_time);
 	
-	user *= 10000;
-	do_div(user, cpu_time);
+	//user *= 10000;
+	//do_div(user, cpu_time);
 
-	system *= 10000;
-	do_div(system, cpu_time);
+	//system *= 10000;
+	//do_div(system, cpu_time);
 
 	printk("%d, %lld, %lld, %lld, %s, %s\n", curr->pid, proc_time, user, system, tsk->comm, tsk->group_leader->comm);
 }
@@ -292,9 +292,9 @@ static int pick_topN_proc(struct procstat* copystats,
 		prev_proc_stat = find_record(topN_proc_records_prev, proc_stat);
 		indexarr[localmaxindex]++;
 
-		if (prev_proc_stat) {
+		if (prev_proc_stat)
 			push_procstat(prev_proc_stat, proc_stat, &copystats->cput, cput);
-		}
+		
 		memcpy(&topN_proc_records_curr[count], proc_stat, sizeof(struct per_proc_stat));
 	}
 	kfree(topN_proc_records_prev);
@@ -343,7 +343,9 @@ void analyse_proc(struct procstat *stats) {
 	memcpy(copystats, stats, sizeof(struct procstat));
 
 	/* clear processes heap, prepared for next iteration */
-	memset(&stats->stats, 0, sizeof(struct per_cpu_procstat));
+	//printk("before, pid: %d, counter: %ld\n", stats->stats[0].per_cpu_stats[0].pid, stats->stats[0].per_cpu_stats[0].counter);
+	memset(&stats->stats, 0, sizeof(struct per_cpu_procstat) * LOG_MAX_CPU_NR);
+	//printk("after, pid: %d, counter: %ld\n", stats->stats[0].per_cpu_stats[0].pid, stats->stats[0].per_cpu_stats[0].counter);
 
 	collect_cpu_time(cput);
 
